@@ -8,7 +8,7 @@
 enum class ErrorCode {
     Ok, Unknown, InvalidArgument, UnsupportedBackend, UnsupportedFormat,
     DeviceMismatch, ResourceCreationFailed, SharedHandleFailed,
-    SenderNotFound, SenderClosed, Timeout, BackendError,
+    SenderNotFound, SenderClosed, Timeout, BackendError, CommandFailed,
 };
 
 struct Error {
@@ -227,6 +227,7 @@ typedef enum {
     NOZZLE_ERROR_SENDER_CLOSED,
     NOZZLE_ERROR_TIMEOUT,
     NOZZLE_ERROR_BACKEND_ERROR,
+    NOZZLE_ERROR_COMMAND_FAILED,
 } NozzleErrorCode;
 
 // Sender

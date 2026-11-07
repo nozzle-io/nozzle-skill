@@ -118,7 +118,11 @@ This is intentional — GL does not share address space with Metal or D3D11 on c
 
 ## §9. Ring Buffer Full Behavior
 
-When the sender's ring buffer is full (all N textures committed but not yet consumed), `acquire_writable_frame()` returns `ErrorCode::Timeout` **immediately** — it does not block or wait.
+`acquire_writable_frame()` returns `ErrorCode::Timeout` when all slots have
+outstanding writable reservations, or (on D3D11) all reusable textures are held
+by receivers. D3D11 probes each candidate with zero wait. A committed frame is
+not a queue entry that must be consumed: different receivers can acquire the
+same publication, and newer frames may replace an unheld older publication.
 
 The default `acquire_desc::timeout_ms` is 0 (no wait). To wait for a frame:
 
@@ -132,13 +136,34 @@ auto frm = recv.acquire_frame(acq);
 
 `d3d11::get_shared_handle()` returns a `HANDLE` owned by the nozzle texture. Do **not** call `CloseHandle()` on it. The handle is closed when the texture is destroyed.
 
-## §11. Metal IOSurface Sync is Polling
+## §11. Metal Producer Completion Is Caller-Owned
 
-On macOS, IOSurface synchronization uses `IOSurfaceLock`/`IOSurfaceUnlock` with polling (500µs sleep between attempts). This is adequate for most use cases but introduces up to 500µs latency on the read path. There is no hardware fence mechanism for cross-process IOSurface access.
+Metal backend signal/wait/release dispatch is a no-op, not an IOSurfaceLock
+polling protocol. Producer GPU work must be complete before publication.
+Nozzle does not provide consumer GPU-completion acknowledgments for IOSurface
+reuse. Do not infer such synchronization from successful frame acquisition or
+from the separate CPU mapping lock/unlock operations.
 
-## §12. D3D11 Keyed Mutex Uses INFINITE Timeout
+## §12. D3D11 Uses a Key-0 Writer Lease
 
-The sender side uses `AcquireSync(0, INFINITE)` on the keyed mutex when committing frames. If the receiver crashes while holding the mutex, the sender thread will deadlock. This is a known limitation — crash cleanup relies on the receiver detecting a dead sender on next access failure.
+D3D11 acquires key 0 **before** exposing writable storage and releases key 0
+after pixels and matching metadata are published. CPU upload borrows that
+lease; independent mappings retain it after writable-frame/sender destruction.
+An abandoned writable reservation becomes reclaimable after its active mapping
+finishes. Prefer explicit commit/discard rather than implicit abandonment.
+
+Receivers also acquire/release key 0, allowing sequential fan-out. Zero timeout
+means zero wait, not a one-second or infinite wait. Held slots are not writable;
+an abandoned mutex is an invalid resource and the sender recreates it. Receivers
+return `Timeout` for that unavailable frame until replacement, not a fatal error
+for the surviving receiver. Reusing storage invalidates its previous slot
+publication before writes, and discard
+does not restore that old publication.
+
+`publish_external_texture` returns `UnsupportedBackend` on D3D11; use a writable
+frame or native publication into the sender-owned ring. Sender-state version is
+7 across all backends (directory remains 6), so version 6 peers are rejected.
+Do not mix protocol versions or claim physical-Windows validation from CI alone.
 
 ## §13. Linux DMA-BUF Hardcodes renderD128
 

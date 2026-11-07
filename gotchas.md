@@ -154,8 +154,10 @@ finishes. Prefer explicit commit/discard rather than implicit abandonment.
 
 Receivers also acquire/release key 0, allowing sequential fan-out. Zero timeout
 means zero wait, not a one-second or infinite wait. Held slots are not writable;
-an abandoned mutex is an invalid resource and the sender recreates it. Reusing
-storage invalidates its previous slot publication before writes, and discard
+an abandoned mutex is an invalid resource and the sender recreates it. Receivers
+return `Timeout` for that unavailable frame until replacement, not a fatal error
+for the surviving receiver. Reusing storage invalidates its previous slot
+publication before writes, and discard
 does not restore that old publication.
 
 `publish_external_texture` returns `UnsupportedBackend` on D3D11; use a writable
